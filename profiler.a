@@ -1,0 +1,327 @@
+!to "profiler.prg", cbm
+
+!macro DCOPY @from, @to {
+  lda @from
+  sta @to
+  lda @from+1
+  sta @to+1
+}
+
+!macro DSET @from, @to {
+  lda #<@from
+  sta @to
+  lda #>@from
+  sta @to+1
+}
+
+!macro READ_WORD @ziel {
+    jsr $aefd
+    jsr $ad8a
+    jsr $b7f7
+    +DCOPY $14,@ziel
+}
+
+*=49152
+
+    jmp .start    ; SYS49152 [,counter]
+    jmp .init     ; SYS49155,low,high
+
+;------------------------------------------------------------------
+
+.init
+    +READ_WORD .low
+    +READ_WORD .high
+    rts
+
+;------------------------------------------------------------------
+
+.start
+    ldy #0
+    sty .counter
+    lda ($7a),y
+    cmp #','
+    bne +
+
+    jsr $b79b
+    stx .counter
+    stx .counter_start
++
+
+    sei
+
+    +DCOPY .low, .curr
+
+    +DCOPY $0300, .backup1
+    +DSET .end, $0300
+
+    +DCOPY $0314, .backup2
+    +DSET .irq, $0314
+
+    cli
+
+    jsr $a659
+    jmp $a7ae
+
+;------------------------------------------------------------------
+
+.end
+    sei
+
+    +DCOPY .backup1, $0300
+    +DCOPY .backup2, $0314
+
+    cli
+
+    jsr .report
+
+    ldx #$80
+    jmp $e38b
+
+;------------------------------------------------------------------
+
+.irq
+    lda .counter
+    beq +
+    dec .counter
+    jmp (.backup2)
++   lda .counter_start
+    sta .counter
+
+    +DCOPY .low, $fb
+
+.search_lineno_loop
+    lda $fc
+    cmp .curr+1
+    bcc .test_lineno
+    bne .add_new_line
+
+    lda $fb
+    cmp .curr
+    bcs .add_new_line
+
+.test_lineno
+    ldy #0
+    lda ($fb),y
+    cmp $39
+    bne .next_step
+    iny
+    lda ($fb),y
+    cmp $3a
+    bne .next_step
+
+    iny
+    iny
+    lda ($fb),y
+    cmp #255
+    bne +
+    dey
+    lda ($fb),y
+    cmp #255
+    bne +
+    ; maximum counter already reached, ignoring line
+    jmp (.backup2)
+
++   ldy #2
+    lda ($fb),y
+    tax
+    inx
+    txa
+    sta ($fb),y
+    bne +
+    iny
+    lda ($fb),y
+    tax
+    inx
+    txa
+    sta ($fb),y
++   jmp .sort
+
+.next_step
+    lda $fb
+    clc
+    adc #4
+    sta $fb
+    bcc +
+    inc $fc
++   jmp .search_lineno_loop
+
+.add_new_line
+    lda $fc
+    cmp .high+1
+    bcc +
+    lda $fb
+    cmp .high
+    bcc +
+    ; buffer full, ignoring line
+    jmp (.backup2)
++
+
+    ldy #0
+    lda $39
+    sta ($fb),y
+    iny
+    lda $3a
+    sta ($fb),y
+    iny
+    lda #1
+    sta ($fb),y
+    iny
+    lda #0
+    sta ($fb),y
+    lda .curr
+    clc
+    adc #4
+    sta .curr
+    bcc +
+    inc .curr+1
++
+
+.sort
+    lda $fc
+    cmp .low+1
+    bne +
+    lda $fb
+    cmp .low
+    bne +
+    ; reached .low
+    jmp (.backup2)
+
++   lda $fb
+    sec
+    sbc #4
+    sta $fd
+    lda $fc
+    sbc #0
+    sta $fe
+
+    ldy #3
+    lda ($fd),y
+    cmp ($fb),y
+    beq +
+    bcc .exch_lines
+    jmp (.backup2)
+
++   dey
+    lda ($fd),y
+    cmp ($fb),y
+    bcc .exch_lines
+    jmp (.backup2)
+
+.exch_lines
+    ldy #0
+-   lda ($fb),y
+    tax
+    lda ($fd),y
+    sta ($fb),y
+    txa
+    sta ($fd),y
+    iny
+    cpy #4
+    bne -
+
+    +DCOPY $fd, $fb
+    jmp .sort
+
+.report
+    lda #147
+    jsr $ffd2
+    lda #20
+    sta .counter
+
+    +DCOPY .low, $fb
+
+.output_loop
+    lda $fc
+    cmp .curr+1
+    bcc .output_line
+    beq +
+    rts
+
++   lda $fb
+    cmp .curr
+    bcc .output_line
+    rts
+
+.output_line
+    ldy #0
+    lda ($fb),y
+    tax
+    iny
+    lda ($fb),y
+    jsr .show
+
+    lda #' '
+    jsr $ffd2
+
+    ldy #2
+    lda ($fb),y
+    tax
+    iny
+    lda ($fb),y
+    jsr .show
+
+    lda #13
+    jsr $ffd2
+
+    lda $fb
+    clc
+    adc #4
+    sta $fb
+    bcc +
+    inc $fc
++   dec .counter
+    bne .output_loop
+    rts
+
+.show
+    ; x=lo, a=hi
+    stx $14
+    sta $15
+    ldy #0
+
+.digit_loop
+    ldx #0
+-   lda $15
+    cmp .digit_tab+5,y
+    bcc .next_digit
+    bne +
+    lda $14
+    cmp .digit_tab,y
+    bcc .next_digit
++
+
+    inx
+    lda $14
+    sec
+    sbc .digit_tab,y
+    sta $14
+    lda $15
+    sbc .digit_tab+5,y
+    sta $15
+    bcs -
+
+.next_digit
+    txa
+    ora #$30
+    jsr $ffd2
+    iny
+    cpy #5
+    bne .digit_loop
+    rts
+
+.digit_tab !by <10000,<1000,<100,<10,<1
+           !by >10000,>1000,>100,>10,>1
+
+.backup1 !wo 0
+.backup2 !wo 0
+
+.counter !by 0
+.counter_start !by 0
+
+.low  !wo .data
+.high !wo $d000
+.curr !wo .data
+
+!align 3,0
+.data
+
