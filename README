@@ -1,0 +1,40 @@
+# BASIC Profiler
+
+Der BASIC-Profiler ist ein kleines Tool, mit dem man die Hotspots in
+einem BASIC-Programm ausfinding machen kann. Der Profiler zählt dabei
+in regelmäßigen Intervallen die Zeilennummer, die derzeit gerade
+aktuell abgearbeitet wird. Am Ende wird dann eine Übersicht über die
+20 am Häufigsten benutzten Zeilennummern ausgegeben.
+
+## Benutzung
+
+Zuerst den Profiler mit LOAD"PROFILER",8,1 in den Speicherbereich ab
+49152 laden. Dann ein BASIC-Programm laden (oder schreiben).
+
+Zum Messen, das Programm nicht mit RUN starten, sondern mit SYS49152.
+
+Normalerweise misst das Programm alle 60stel-Sekunde, nämlich immer,
+wenn ein IRQ ausgelöst wird. Das kann in zwei Fällen zu Problemen
+führen:
+
+a) Wenn das Programm lange läuft, wird die Maximalgrenze von 65535 für
+eine Zeile erreicht. Der Profiler zählt diese Zeile dann nicht mehr
+weiter.
+
+b) Wenn das Programm sehr viele Zeilen hat, kann es sein, dass die
+Messung für einen IRQ zu lange dauert und das Programm extrem langsam
+wird (oder gar nicht mehr vorankommt).
+
+In diesen beiden Fällen kann es sinnvoll sein, eine bestimmte Anzahl
+an IRQs auszulassen, bevor wieder gemessen wird. Dies kann man mit
+einem optionalen Parameter beim Starten des Profilers angeben:
+SYS49152,<n> sorgt dafür, dass jedesmal <n> IRQs ausgelassen werden.
+<n> kann dabei einen Wert von 0 bis 255 annehmen, 0 ist der default.
+
+Der Profiler benötigt Speicherbereich, in dem die Zähldaten für die
+Zeilen gespeichert werden können. Standardmäßig ist das der Bereich
+nach dem Programm bis $D000. Dieser kann aber angepasst werden, indem
+man einen anderen Bereich mit SYS49155,<von>,<nach> auswählt. <von>
+und <nach> müssen dabei durch 4 teilbare Speicheradressen sein. Die
+Adressen können derzeit nicht in einem Bereich sein, der von ROM oder
+IO verdeckt wird.
